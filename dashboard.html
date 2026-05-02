@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flow Meter Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Syne:wght@400;700;800&display=swap"
+        rel="stylesheet" />
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            background: #0a0c0f;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image: linear-gradient(rgba(0, 255, 180, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(0, 255, 180, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .content {
+            position: relative;
+            z-index: 1;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .card {
+            background: #111418;
+            border: 1px solid #1e2530;
+            border-radius: 16px;
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.3s, transform 0.2s;
+        }
+
+        .card:hover {
+            border-color: #2d3748;
+            transform: translateY(-2px);
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent, #00ffb4), transparent);
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        .value-num {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 2.6rem;
+            font-weight: 600;
+            line-height: 1;
+            letter-spacing: -0.02em;
+            transition: color 0.15s;
+        }
+
+        .flash {
+            color: #ffffff !important;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot-live {
+            background: #00ffb4;
+            box-shadow: 0 0 8px #00ffb4;
+            animation: blink 2s infinite;
+        }
+
+        .dot-error {
+            background: #ff6b6b;
+            box-shadow: 0 0 8px #ff6b6b;
+        }
+
+        .dot-idle {
+            background: #4a5568;
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.3;
+            }
+        }
+
+        .tag {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #0d1a14;
+            border: 1px solid #00ffb420;
+            color: #00ffb4;
+        }
+
+        .range-btn {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            padding: 4px 12px;
+            border-radius: 6px;
+            background: #1a1f2e;
+            border: 1px solid #2d3748;
+            color: #9ca3af;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .range-btn:hover {
+            border-color: #00ffb4;
+            color: #00ffb4;
+        }
+
+        .range-btn.active {
+            background: #0d1a14;
+            border-color: #00ffb4;
+            color: #00ffb4;
+        }
+
+        .log-entry {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #374151;
+            padding: 4px 0;
+            border-bottom: 1px solid #1a1f2a;
+            transition: color 1.5s;
+        }
+
+        .log-entry.fresh {
+            color: #00ffb460;
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #2d3748;
+            border-radius: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="content max-w-6xl mx-auto px-6 py-8">
+
+        <!-- Header -->
+        <div class="flex items-start justify-between mb-8">
+            <div>
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="mono text-xs text-slate-600 tracking-widest uppercase">RX1400 · 192.168.0.2:502 · Slave
+                        1</span>
+                </div>
+                <h1 class="text-3xl font-bold tracking-tight">Flow Meter <span style="color:#00ffb4">Dashboard</span>
+                </h1>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+                <div class="status-dot dot-idle" id="dot"></div>
+                <span class="text-sm text-slate-400" id="status-txt">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Flow Rate -->
+        <div class="card p-6 mb-5" style="--accent:#60a5fa">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                    <span class="mono text-xs text-slate-500 uppercase tracking-widest">Flow Rate</span>
+                    <span class="tag" style="background:#0a1220;border-color:#60a5fa30;color:#60a5fa">REG 3003</span>
+                </div>
+                <div class="mono text-xs text-slate-600" id="fr-delta">—</div>
+            </div>
+            <div class="flex items-end gap-3">
+                <div class="value-num" id="fr-val" style="color:#60a5fa">—</div>
+                <div class="text-slate-500 mono text-sm mb-1">m³/h</div>
+            </div>
+        </div>
+
+        <!-- Totalizer Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            <div class="card p-5" style="--accent:#00ffb4">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="mono text-xs text-slate-500 uppercase tracking-widest">Totalizer 1</span>
+                    <span class="tag">REG 3018</span>
+                </div>
+                <div class="value-num mb-1" id="t1-val" style="color:#00ffb4">—</div>
+                <div class="mono text-xs text-slate-600 mt-1">m³</div>
+                <div class="mono text-xs mt-2" id="t1-delta" style="color:#4a5568">—</div>
+            </div>
+            <div class="card p-5" style="--accent:#a78bfa">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="mono text-xs text-slate-500 uppercase tracking-widest">Totalizer 2</span>
+                    <span class="tag" style="background:#12101e;border-color:#a78bfa30;color:#a78bfa">REG 3022</span>
+                </div>
+                <div class="value-num mb-1" id="t2-val" style="color:#a78bfa">—</div>
+                <div class="mono text-xs text-slate-600 mt-1">m³</div>
+                <div class="mono text-xs mt-2" id="t2-delta" style="color:#4a5568">—</div>
+            </div>
+            <div class="card p-5" style="--accent:#f59e0b">
+                <div class="flex items-center justify-between mb-3">
+                    <span class="mono text-xs text-slate-500 uppercase tracking-widest">Totalizer 3</span>
+                    <span class="tag" style="background:#1a1200;border-color:#f59e0b30;color:#f59e0b">REG 3026</span>
+                </div>
+                <div class="value-num mb-1" id="t3-val" style="color:#f59e0b">—</div>
+                <div class="mono text-xs text-slate-600 mt-1">m³</div>
+                <div class="mono text-xs mt-2" id="t3-delta" style="color:#4a5568">—</div>
+            </div>
+        </div>
+
+        <!-- History Chart -->
+        <div class="card p-6 mb-5">
+            <div class="flex items-center justify-between mb-4">
+                <span class="mono text-xs text-slate-500 uppercase tracking-widest">History</span>
+                <div class="flex gap-2">
+                    <button class="range-btn active" data-range="1h">1H</button>
+                    <button class="range-btn" data-range="4h">4H</button>
+                    <button class="range-btn" data-range="1d">1D</button>
+                    <button class="range-btn" data-range="7d">7D</button>
+                    <button class="range-btn" data-range="14d">14D</button>
+                    <button class="range-btn" data-range="30d">30D</button>
+                </div>
+            </div>
+            <div class="flex items-center gap-4 mono text-xs text-slate-600 mb-3">
+                <span><span style="color:#60a5fa">■</span> Flow</span>
+                <span><span style="color:#00ffb4">■</span> T1</span>
+                <span><span style="color:#a78bfa">■</span> T2</span>
+                <span><span style="color:#f59e0b">■</span> T3</span>
+            </div>
+            <canvas id="chart" height="130"></canvas>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-between mb-5">
+            <span class="mono text-xs text-slate-600 uppercase">Live update every 5 seconds</span>
+            <span class="mono text-xs text-slate-600" id="last-update">Last update: —</span>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="card p-4">
+            <div class="mono text-xs text-slate-600 uppercase tracking-widest mb-3">Activity log</div>
+            <div id="log" class="max-h-44 overflow-y-auto space-y-0"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const labels = [], frData = [], t1Data = [], t2Data = [], t3Data = [];
+        let prev = { flowRate: null, t1: null, t2: null, t3: null };
+        let ws, reconnectTimer, currentRange = '1h';
+
+        // Chart setup
+        const chart = new Chart(document.getElementById('chart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    { label: 'Flow Rate', data: frData, borderColor: '#60a5fa', backgroundColor: 'transparent', tension: 0.4, pointRadius: 2, borderWidth: 2, yAxisID: 'yFlow' },
+                    { label: 'T1', data: t1Data, borderColor: '#00ffb4', backgroundColor: 'transparent', tension: 0.4, pointRadius: 2, borderWidth: 1.5, yAxisID: 'yTotal' },
+                    { label: 'T2', data: t2Data, borderColor: '#a78bfa', backgroundColor: 'transparent', tension: 0.4, pointRadius: 2, borderWidth: 1.5, yAxisID: 'yTotal' },
+                    { label: 'T3', data: t3Data, borderColor: '#f59e0b', backgroundColor: 'transparent', tension: 0.4, pointRadius: 2, borderWidth: 1.5, yAxisID: 'yTotal' },
+                ]
+            },
+            options: {
+                responsive: true,
+                animation: { duration: 400 },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        backgroundColor: '#111418', borderColor: '#2d3748', borderWidth: 1,
+                        titleColor: '#9ca3af', bodyColor: '#e2e8f0',
+                        titleFont: { family: 'JetBrains Mono', size: 11 },
+                        bodyFont: { family: 'JetBrains Mono', size: 11 },
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: '#374151', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 }, grid: { color: '#1e2530' } },
+                    yFlow: { position: 'left', ticks: { color: '#60a5fa', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1e2530' } },
+                    yTotal: { position: 'right', ticks: { color: '#00ffb480', font: { family: 'JetBrains Mono', size: 10 } }, grid: { display: false } }
+                }
+            }
+        });
+
+        // Load history from API
+        async function loadHistory(range) {
+            try {
+                const res = await fetch(`/api/history?range=${range}`);
+                const rows = await res.json();
+
+                labels.length = 0;
+                frData.length = 0;
+                t1Data.length = 0;
+                t2Data.length = 0;
+                t3Data.length = 0;
+
+                rows.forEach(row => {
+                    labels.push(new Date(row.timestamp).toLocaleTimeString());
+                    frData.push(row.flow_rate);
+                    t1Data.push(row.t1);
+                    t2Data.push(row.t2);
+                    t3Data.push(row.t3);
+                });
+
+                chart.update();
+                addLog(`Loaded ${rows.length} records for ${range}`);
+            } catch (err) {
+                addLog('Failed to load history: ' + err.message, true);
+            }
+        }
+
+        // Range buttons
+        document.querySelectorAll('.range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentRange = btn.dataset.range;
+                loadHistory(currentRange);
+            });
+        });
+
+        function setStatus(cls, msg) {
+            document.getElementById('dot').className = 'status-dot ' + cls;
+            document.getElementById('status-txt').textContent = msg;
+        }
+
+        function flash(id) {
+            const el = document.getElementById(id);
+            el.classList.add('flash');
+            setTimeout(() => el.classList.remove('flash'), 250);
+        }
+
+        function setDelta(id, curr, p) {
+            const el = document.getElementById(id);
+            if (p === null) { el.textContent = 'Waiting...'; el.style.color = '#4a5568'; return; }
+            const d = curr - p;
+            if (d > 0) { el.textContent = '▲ +' + d.toFixed(4) + ' m³'; el.style.color = '#00ffb4'; }
+            else if (d < 0) { el.textContent = '▼ ' + d.toFixed(4) + ' m³'; el.style.color = '#ff6b6b'; }
+            else { el.textContent = '● No change'; el.style.color = '#4a5568'; }
+        }
+
+        function addLog(msg, isErr) {
+            const log = document.getElementById('log');
+            const div = document.createElement('div');
+            div.className = 'log-entry fresh';
+            div.textContent = '[' + new Date().toLocaleTimeString() + ']  ' + msg;
+            if (isErr) div.style.color = '#ff6b6b60';
+            log.prepend(div);
+            setTimeout(() => div.classList.remove('fresh'), 2000);
+            while (log.children.length > 60) log.removeChild(log.lastChild);
+        }
+
+        function onData(d) {
+            document.getElementById('fr-val').textContent = d.flowRate.toFixed(3);
+            document.getElementById('t1-val').textContent = d.t1.toFixed(3);
+            document.getElementById('t2-val').textContent = d.t2.toFixed(3);
+            document.getElementById('t3-val').textContent = d.t3.toFixed(3);
+
+            ['fr-val', 't1-val', 't2-val', 't3-val'].forEach(flash);
+
+            const frEl = document.getElementById('fr-delta');
+            if (prev.flowRate !== null) {
+                const d2 = d.flowRate - prev.flowRate;
+                frEl.textContent = (d2 >= 0 ? '▲ +' : '▼ ') + d2.toFixed(4) + ' m³/h';
+                frEl.style.color = d2 >= 0 ? '#60a5fa' : '#ff6b6b';
+            }
+
+            setDelta('t1-delta', d.t1, prev.t1);
+            setDelta('t2-delta', d.t2, prev.t2);
+            setDelta('t3-delta', d.t3, prev.t3);
+
+            prev = { flowRate: d.flowRate, t1: d.t1, t2: d.t2, t3: d.t3 };
+
+            // Update chart with live data (1H view only)
+            if (currentRange === '1h') {
+                const time = new Date(d.timestamp).toLocaleTimeString();
+                labels.push(time);
+                frData.push(d.flowRate);
+                t1Data.push(d.t1);
+                t2Data.push(d.t2);
+                t3Data.push(d.t3);
+                if (labels.length > 72) {
+                    [labels, frData, t1Data, t2Data, t3Data].forEach(a => a.shift());
+                }
+                chart.update();
+            }
+
+            document.getElementById('last-update').textContent = 'Last update: ' + new Date(d.timestamp).toLocaleTimeString();
+            addLog(`Flow: ${d.flowRate.toFixed(3)} m³/h  |  T1: ${d.t1.toFixed(3)}  |  T2: ${d.t2.toFixed(3)}  |  T3: ${d.t3.toFixed(3)} m³`);
+        }
+
+        function connect() {
+            setStatus('dot-idle', 'Connecting...');
+            ws = new WebSocket('ws://localhost:8080');
+            ws.onopen = () => { setStatus('dot-live', 'Connected — live'); addLog('WebSocket connected'); loadHistory(currentRange); };
+            ws.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'data') onData(msg);
+                if (msg.type === 'error') { addLog('Modbus error: ' + msg.message, true); setStatus('dot-error', 'Modbus error'); }
+            };
+            ws.onclose = () => { setStatus('dot-error', 'Disconnected — retrying in 3s'); addLog('Disconnected. Retrying...', true); clearTimeout(reconnectTimer); reconnectTimer = setTimeout(connect, 3000); };
+            ws.onerror = () => setStatus('dot-error', 'Connection failed');
+        }
+
+        connect();
+    </script>
+</body>
+
+</html>
